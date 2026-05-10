@@ -5,10 +5,42 @@
 提供多平台通知内容渲染功能，生成格式化的推送消息
 """
 
+import re
 from datetime import datetime
 from typing import Dict, Optional, Callable
 
 from trendradar.report.formatter import format_title_for_platform
+
+
+def _clean_markdown_code(text: str) -> str:
+    """清理 markdown 代码标记，避免在 text 消息中显示为代码
+
+    清理规则：
+    - 去除 markdown 代码块（```...```）及语言标识
+    - 去除行内代码标记（`...`）但保留内容
+    - 去除多余的空行
+
+    Args:
+        text: 原始文本
+
+    Returns:
+        清理后的文本
+    """
+    if not text:
+        return text
+
+    # 1. 去除 markdown 代码块：```lang\ncode\n```
+    text = re.sub(r"```[\w]*\n(.*?)\n```", r"\1", text, flags=re.DOTALL)
+    # 处理单行代码块：```code```
+    text = re.sub(r"```(.*?)```", r"\1", text, flags=re.DOTALL)
+
+    # 2. 去除行内代码标记 `code` → code（保留内容）
+    text = re.sub(r"`([^`]+)`", r"\1", text)
+
+    # 3. 去除多余的空行（保留单空行）
+    text = re.sub(r"\n{3,}", "\n\n", text)
+
+    return text.strip()
 
 
 def render_feishu_content(
@@ -140,7 +172,8 @@ def render_feishu_content(
     if update_info:
         text_content += f"\n<font color='grey'>TrendRadar 发现新版本 {update_info['remote_version']}，当前 {update_info['current_version']}</font>"
 
-    return text_content
+    # 清理 markdown 代码标记，避免在飞书 text 消息中显示为代码
+    return _clean_markdown_code(text_content)
 
 
 def render_dingtalk_content(
