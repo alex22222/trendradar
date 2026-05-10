@@ -11,9 +11,10 @@ from .analyzer import AIAnalysisResult
 
 
 def _clean_markdown_code(text: str) -> str:
-    """清理 markdown 代码标记
+    """清理 markdown 代码标记和 HTML 标签（用于飞书 text 消息）
 
     清理规则：
+    - 去除 HTML <font> 标签（保留内容）
     - 去除 markdown 代码块（```...```）及语言标识
     - 去除行内代码标记（`...`）但保留内容
     - 去除多余的空行
@@ -21,14 +22,17 @@ def _clean_markdown_code(text: str) -> str:
     if not text:
         return text
 
-    # 去除 markdown 代码块
+    # 1. 去除 HTML <font> 标签（保留内容）
+    text = re.sub(r"<font[^>]*>(.*?)</font>", r"\1", text, flags=re.DOTALL)
+
+    # 2. 去除 markdown 代码块
     text = re.sub(r"```[\w]*\n(.*?)\n```", r"\1", text, flags=re.DOTALL)
     text = re.sub(r"```(.*?)```", r"\1", text, flags=re.DOTALL)
 
-    # 去除行内代码标记
+    # 3. 去除行内代码标记
     text = re.sub(r"`([^`]+)`", r"\1", text)
 
-    # 去除多余空行
+    # 4. 去除多余空行
     text = re.sub(r"\n{3,}", "\n\n", text)
 
     return text.strip()
