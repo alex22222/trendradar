@@ -85,10 +85,24 @@ rss:
       url: "https://hnrss.org/frontpage"
       # max_age_days: 1               # 示例：只推送1天内的文章
 
-    - id: "ruanyifeng"
-      name: "阮一峰的网络日志"
-      url: "http://www.ruanyifeng.com/blog/atom.xml"
-      # max_age_days: 7               # 示例：推送7天内的文章（更新较慢的博客）
+    # - id: "ruanyifeng"
+    #   name: "阮一峰的网络日志"
+    #   url: "http://www.ruanyifeng.com/blog/atom.xml"
+
+    # Reddit 在当前网络环境下无法直接访问（需要代理），暂时注释
+    # - id: "reddit-popular"
+    #   name: "Reddit 热门"
+    #   url: "https://www.reddit.com/r/popular/.rss"
+    #   enabled: false
+
+    - id: "spaceflight-now"
+      name: "Spaceflight Now"
+      url: "https://spaceflightnow.com/feed/"
+      # max_age_days: 1
+
+    - id: "ars-space"
+      name: "Ars Technica - Space"
+      url: "https://arstechnica.com/tag/space/feed/"
     
     - id: "yahoo-finance"
       name: "雅虎财经"
