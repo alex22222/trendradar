@@ -26,6 +26,7 @@ from .senders import (
     send_to_dingtalk,
     send_to_email,
     send_to_feishu,
+    send_to_feishu_app,
     send_to_ntfy,
     send_to_slack,
     send_to_telegram,
@@ -107,9 +108,16 @@ class NotificationDispatcher:
         ai_config = self.config.get("AI_ANALYSIS", {})
         ai_push_mode = ai_config.get("PUSH_MODE", "both")
 
-        # 飞书
+        # 飞书（自定义机器人 webhook）
         if self.config.get("FEISHU_WEBHOOK_URL"):
             results["feishu"] = self._send_feishu(
+                report_data, report_type, update_info, proxy_url, mode, rss_items, rss_new_items,
+                ai_analysis, ai_push_mode, standalone_data
+            )
+
+        # 飞书企业应用（开放平台）
+        if self.config.get("FEISHU_APP_ENABLED") and self.config.get("FEISHU_APP_ID") and self.config.get("FEISHU_APP_SECRET"):
+            results["feishu_app"] = self._send_feishu_app(
                 report_data, report_type, update_info, proxy_url, mode, rss_items, rss_new_items,
                 ai_analysis, ai_push_mode, standalone_data
             )
@@ -225,11 +233,23 @@ class NotificationDispatcher:
         if ai_push_mode == "only_analysis" and ai_analysis:
             report_data = {"stats": [], "failed_ids": [], "new_titles": {}, "id_to_name": {}}
 
-        return self._send_to_multi_accounts(
-            channel_name="飞书",
-            config_value=self.config["FEISHU_WEBHOOK_URL"],
-            send_func=lambda url, account_label: send_to_feishu(
-                webhook_url=url,
+        # 解析多账号 webhook 和 secret（用 ; 分隔，数量需一致）
+        feishu_webhooks = parse_multi_account_config(self.config["FEISHU_WEBHOOK_URL"])
+        feishu_secrets = parse_multi_account_config(self.config.get("FEISHU_SECRET", ""))
+
+        if not feishu_webhooks:
+            return False
+
+        feishu_webhooks = limit_accounts(feishu_webhooks, self.max_accounts, "飞书")
+
+        results = []
+        for i, webhook_url in enumerate(feishu_webhooks):
+            if not webhook_url:
+                continue
+            secret = feishu_secrets[i] if feishu_secrets and i < len(feishu_secrets) else ""
+            account_label = f"账号{i+1}" if len(feishu_webhooks) > 1 else ""
+            result = send_to_feishu(
+                webhook_url=webhook_url,
                 report_data=report_data,
                 report_type=report_type,
                 update_info=update_info,
@@ -245,7 +265,48 @@ class NotificationDispatcher:
                 ai_analysis=ai_analysis,
                 ai_push_mode=ai_push_mode,
                 standalone_data=standalone_data,
-            ),
+                secret=secret or None,
+            )
+            results.append(result)
+
+        return any(results) if results else False
+
+    def _send_feishu_app(
+        self,
+        report_data: Dict,
+        report_type: str,
+        update_info: Optional[Dict],
+        proxy_url: Optional[str],
+        mode: str,
+        rss_items: Optional[List[Dict]] = None,
+        rss_new_items: Optional[List[Dict]] = None,
+        ai_analysis: Optional[Any] = None,
+        ai_push_mode: str = "both",
+        standalone_data: Optional[Dict] = None,
+    ) -> bool:
+        """通过飞书企业自建应用发送消息"""
+        if ai_push_mode == "only_analysis" and ai_analysis:
+            report_data = {"stats": [], "failed_ids": [], "new_titles": {}, "id_to_name": {}}
+
+        return send_to_feishu_app(
+            app_id=self.config["FEISHU_APP_ID"],
+            app_secret=self.config["FEISHU_APP_SECRET"],
+            receive_id=self.config["FEISHU_APP_RECEIVE_ID"],
+            receive_id_type=self.config.get("FEISHU_APP_RECEIVE_ID_TYPE", "chat_id"),
+            report_data=report_data,
+            report_type=report_type,
+            update_info=update_info,
+            proxy_url=proxy_url,
+            mode=mode,
+            batch_size=self.config.get("FEISHU_BATCH_SIZE", 29000),
+            batch_interval=self.config.get("BATCH_SEND_INTERVAL", 1.0),
+            split_content_func=self.split_content_func,
+            get_time_func=self.get_time_func,
+            rss_items=rss_items if ai_push_mode != "only_analysis" else None,
+            rss_new_items=rss_new_items if ai_push_mode != "only_analysis" else None,
+            ai_analysis=ai_analysis,
+            ai_push_mode=ai_push_mode,
+            standalone_data=standalone_data,
         )
 
     def _send_dingtalk(

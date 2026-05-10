@@ -274,9 +274,19 @@ def _load_webhook_config(config_data: Dict) -> Dict:
     slack = channels.get("slack", {})
     generic = channels.get("generic_webhook", {})
 
+    # 飞书企业应用（开放平台）
+    feishu_app = channels.get("feishu_app", {})
+
     return {
-        # 飞书
+        # 飞书（自定义机器人 webhook）
         "FEISHU_WEBHOOK_URL": _get_env_str("FEISHU_WEBHOOK_URL") or feishu.get("webhook_url", ""),
+        "FEISHU_SECRET": _get_env_str("FEISHU_SECRET") or feishu.get("secret", ""),
+        # 飞书企业应用
+        "FEISHU_APP_ENABLED": _get_env_bool("FEISHU_APP_ENABLED") if _get_env_bool("FEISHU_APP_ENABLED") is not None else feishu_app.get("enabled", False),
+        "FEISHU_APP_ID": _get_env_str("FEISHU_APP_ID") or feishu_app.get("app_id", ""),
+        "FEISHU_APP_SECRET": _get_env_str("FEISHU_APP_SECRET") or feishu_app.get("app_secret", ""),
+        "FEISHU_APP_RECEIVE_ID": _get_env_str("FEISHU_APP_RECEIVE_ID") or feishu_app.get("receive_id", ""),
+        "FEISHU_APP_RECEIVE_ID_TYPE": _get_env_str("FEISHU_APP_RECEIVE_ID_TYPE") or feishu_app.get("receive_id_type", "chat_id"),
         # 钉钉
         "DINGTALK_WEBHOOK_URL": _get_env_str("DINGTALK_WEBHOOK_URL") or dingtalk.get("webhook_url", ""),
         # 企业微信
@@ -314,7 +324,15 @@ def _print_notification_sources(config: Dict) -> None:
         accounts = parse_multi_account_config(config["FEISHU_WEBHOOK_URL"])
         count = min(len(accounts), max_accounts)
         source = "环境变量" if os.environ.get("FEISHU_WEBHOOK_URL") else "配置文件"
-        notification_sources.append(f"飞书({source}, {count}个账号)")
+        has_secret = bool(config.get("FEISHU_SECRET"))
+        secret_source = "环境变量" if os.environ.get("FEISHU_SECRET") else ("配置文件" if has_secret else "无")
+        sign_info = f", 加签({secret_source})" if has_secret else ""
+        notification_sources.append(f"飞书({source}, {count}个账号{sign_info})")
+
+    if config.get("FEISHU_APP_ENABLED") and config.get("FEISHU_APP_ID"):
+        source = "环境变量" if os.environ.get("FEISHU_APP_ID") else "配置文件"
+        receive_type = config.get("FEISHU_APP_RECEIVE_ID_TYPE", "chat_id")
+        notification_sources.append(f"飞书企业应用({source}, {receive_type})")
 
     if config["DINGTALK_WEBHOOK_URL"]:
         accounts = parse_multi_account_config(config["DINGTALK_WEBHOOK_URL"])

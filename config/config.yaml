@@ -183,7 +183,15 @@ notification:
   # 推送渠道配置
   channels:
     feishu:
-      webhook_url: ""                 # 飞书机器人 webhook URL
+      webhook_url: ""                 # 飞书自定义机器人 webhook URL（与企业应用二选一）
+      secret: ""                      # 飞书机器人签名密钥（加签安全设置用）
+
+    feishu_app:
+      enabled: false                   # 是否启用飞书企业应用推送
+      app_id: ""                      # 飞书开放平台应用 ID
+      app_secret: ""                  # 飞书开放平台应用 Secret
+      receive_id: ""                  # 接收方 ID（群聊/用户）
+      receive_id_type: "chat_id"      # 接收方 ID 类型: chat_id / open_id / user_id / union_id / email
 
     dingtalk:
       webhook_url: ""                 # 钉钉机器人 webhook URL

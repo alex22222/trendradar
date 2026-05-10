@@ -15,6 +15,9 @@
 每个发送函数都支持分批发送，并通过参数化配置实现与 CONFIG 的解耦。
 """
 
+import base64
+import hashlib
+import hmac
 import smtplib
 import time
 import json
@@ -74,6 +77,30 @@ SMTP_CONFIGS = {
 }
 
 
+def _gen_feishu_sign(secret: str) -> Dict[str, str]:
+    """生成飞书加签所需的 timestamp 和 sign
+
+    飞书签名校验算法：
+    1. 获取当前时间戳（秒级）
+    2. 拼接字符串：timestamp + "\\n" + secret
+    3. 使用 HMAC-SHA256 进行签名
+    4. 对签名结果进行 Base64 编码
+
+    Args:
+        secret: 飞书机器人签名密钥
+
+    Returns:
+        {"timestamp": str, "sign": str}
+    """
+    timestamp = str(int(time.time()))
+    string_to_sign = f"{timestamp}\n{secret}"
+    hmac_code = hmac.new(
+        string_to_sign.encode("utf-8"), digestmod=hashlib.sha256
+    ).digest()
+    sign = base64.b64encode(hmac_code).decode("utf-8")
+    return {"timestamp": timestamp, "sign": sign}
+
+
 def send_to_feishu(
     webhook_url: str,
     report_data: Dict,
@@ -92,6 +119,7 @@ def send_to_feishu(
     ai_analysis: Any = None,
     ai_push_mode: str = "both",
     standalone_data: Optional[Dict] = None,
+    secret: Optional[str] = None,
 ) -> bool:
     """
     发送到飞书（支持分批发送，支持热榜+RSS合并+独立展示区）
@@ -110,6 +138,7 @@ def send_to_feishu(
         get_time_func: 获取当前时间的函数
         rss_items: RSS 统计条目列表（可选，用于合并推送）
         rss_new_items: RSS 新增条目列表（可选，用于新增区块）
+        secret: 飞书机器人签名密钥（可选，用于加签）
 
     Returns:
         bool: 发送是否成功
@@ -173,6 +202,10 @@ def send_to_feishu(
             },
         }
 
+        # 如果提供了签名密钥，添加加签参数
+        if secret:
+            payload.update(_gen_feishu_sign(secret))
+
         try:
             response = requests.post(
                 webhook_url, headers=headers, json=payload, proxies=proxies, timeout=30
@@ -202,6 +235,195 @@ def send_to_feishu(
 
     print(f"{log_prefix}所有 {len(batches)} 批次发送完成 [{report_type}]")
 
+    return True
+
+
+def _get_feishu_app_token(
+    app_id: str,
+    app_secret: str,
+    proxy_url: Optional[str] = None,
+) -> Optional[str]:
+    """获取飞书企业自建应用的 tenant_access_token"""
+    url = "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal"
+    headers = {"Content-Type": "application/json"}
+    payload = {"app_id": app_id, "app_secret": app_secret}
+    proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
+
+    try:
+        response = requests.post(
+            url, headers=headers, json=payload, proxies=proxies, timeout=30
+        )
+        if response.status_code == 200:
+            result = response.json()
+            if result.get("code") == 0:
+                token = result.get("tenant_access_token")
+                print(f"飞书企业应用 Token 获取成功，有效期 {result.get('expire', '?')} 秒")
+                return token
+            else:
+                print(f"飞书 Token 获取失败: {result.get('msg', '未知错误')}")
+        else:
+            print(f"飞书 Token 获取失败，状态码: {response.status_code}")
+    except Exception as e:
+        print(f"飞书 Token 获取异常: {e}")
+    return None
+
+
+def _send_feishu_app_message(
+    token: str,
+    receive_id: str,
+    receive_id_type: str,
+    content: str,
+    proxy_url: Optional[str] = None,
+) -> bool:
+    """使用企业应用发送单条消息到飞书"""
+    url = f"https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type={receive_id_type}"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "receive_id": receive_id,
+        "msg_type": "text",
+        "content": json.dumps({"text": content}, ensure_ascii=False),
+    }
+    proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
+
+    try:
+        response = requests.post(
+            url, headers=headers, json=payload, proxies=proxies, timeout=30
+        )
+        if response.status_code == 200:
+            result = response.json()
+            if result.get("code") == 0:
+                return True
+            else:
+                error_msg = result.get("msg", "未知错误")
+                print(f"飞书企业应用消息发送失败: {error_msg}")
+                # 常见错误提示
+                if "not in chat" in error_msg or "not member" in error_msg:
+                    print("  → 提示：请先将该应用添加到目标群聊中")
+                elif "receive_id" in error_msg or "invalid" in error_msg:
+                    print(f"  → 提示：请检查 receive_id ({receive_id}) 和 receive_id_type ({receive_id_type}) 是否正确")
+                return False
+        else:
+            print(f"飞书企业应用消息发送失败，状态码: {response.status_code}")
+            try:
+                print(f"  错误详情: {response.text}")
+            except:
+                pass
+            return False
+    except Exception as e:
+        print(f"飞书企业应用消息发送异常: {e}")
+        return False
+
+
+def send_to_feishu_app(
+    app_id: str,
+    app_secret: str,
+    receive_id: str,
+    receive_id_type: str,
+    report_data: Dict,
+    report_type: str,
+    update_info: Optional[Dict] = None,
+    proxy_url: Optional[str] = None,
+    mode: str = "daily",
+    account_label: str = "",
+    *,
+    batch_size: int = 29000,
+    batch_interval: float = 1.0,
+    split_content_func: Callable = None,
+    get_time_func: Callable = None,
+    rss_items: Optional[list] = None,
+    rss_new_items: Optional[list] = None,
+    ai_analysis: Any = None,
+    ai_push_mode: str = "both",
+    standalone_data: Optional[Dict] = None,
+) -> bool:
+    """
+    通过飞书企业自建应用发送消息（支持分批发送）
+
+    Args:
+        app_id: 飞书应用 App ID
+        app_secret: 飞书应用 App Secret
+        receive_id: 接收方 ID（chat_id / open_id / user_id / union_id / email）
+        receive_id_type: 接收方 ID 类型
+        report_data: 报告数据
+        report_type: 报告类型
+        update_info: 更新信息（可选）
+        proxy_url: 代理 URL（可选）
+        mode: 报告模式
+        account_label: 账号标签
+        batch_size: 批次大小
+        batch_interval: 批次发送间隔
+        split_content_func: 内容分批函数
+        get_time_func: 获取当前时间的函数
+        rss_items: RSS 统计条目列表
+        rss_new_items: RSS 新增条目列表
+        ai_analysis: AI 分析结果
+        ai_push_mode: AI 推送模式
+        standalone_data: 独立展示区数据
+
+    Returns:
+        bool: 发送是否成功
+    """
+    log_prefix = f"飞书企业应用{account_label}" if account_label else "飞书企业应用"
+
+    # 1. 获取 tenant_access_token
+    token = _get_feishu_app_token(app_id, app_secret, proxy_url)
+    if not token:
+        print(f"{log_prefix} 无法获取 Token，跳过发送")
+        return False
+
+    # 2. 渲染 AI 分析内容
+    ai_content = None
+    ai_stats = None
+    if ai_analysis:
+        ai_content = _render_ai_analysis(ai_analysis, "feishu", ai_push_mode)
+        if getattr(ai_analysis, "success", False):
+            ai_stats = {
+                "total_news": getattr(ai_analysis, "total_news", 0),
+                "analyzed_news": getattr(ai_analysis, "analyzed_news", 0),
+                "max_news_limit": getattr(ai_analysis, "max_news_limit", 0),
+                "hotlist_count": getattr(ai_analysis, "hotlist_count", 0),
+                "rss_count": getattr(ai_analysis, "rss_count", 0),
+            }
+
+    # 3. 分批处理内容
+    header_reserve = get_max_batch_header_size("feishu")
+    batches = split_content_func(
+        report_data,
+        "feishu",
+        update_info,
+        max_bytes=batch_size - header_reserve,
+        mode=mode,
+        rss_items=rss_items,
+        rss_new_items=rss_new_items,
+        ai_content=ai_content,
+        standalone_data=standalone_data,
+        ai_stats=ai_stats,
+        report_type=report_type,
+    )
+    batches = add_batch_headers(batches, "feishu", batch_size)
+
+    print(f"{log_prefix}消息分为 {len(batches)} 批次发送 [{report_type}]")
+
+    # 4. 逐批发送
+    for i, batch_content in enumerate(batches, 1):
+        content_size = len(batch_content.encode("utf-8"))
+        print(
+            f"发送{log_prefix}第 {i}/{len(batches)} 批次，大小：{content_size} 字节 [{report_type}]"
+        )
+
+        success = _send_feishu_app_message(
+            token, receive_id, receive_id_type, batch_content, proxy_url
+        )
+        if not success:
+            return False
+
+        if i < len(batches):
+            time.sleep(batch_interval)
+
+    print(f"{log_prefix}所有 {len(batches)} 批次发送完成 [{report_type}]")
     return True
 
 
