@@ -18,6 +18,7 @@
 import base64
 import hashlib
 import hmac
+import re
 import smtplib
 import time
 import json
@@ -34,6 +35,25 @@ import requests
 
 from .batch import add_batch_headers, get_max_batch_header_size
 from .formatters import convert_markdown_to_mrkdwn, strip_markdown
+
+
+def _clean_feishu_batch(text: str) -> str:
+    """清理飞书 text 消息批次中的不支持的标记
+
+    飞书 text 消息不支持 HTML 标签，这些会原样显示为文本。
+    本函数清理 <font>、<b> 等 HTML 标签，保留内容。
+    """
+    if not text:
+        return text
+    # 去除 HTML 标签（保留内容）
+    text = re.sub(r"<font[^>]*>(.*?)</font>", r"\1", text, flags=re.DOTALL)
+    text = re.sub(r"<b>(.*?)</b>", r"\1", text, flags=re.DOTALL)
+    text = re.sub(r"<strong>(.*?)</strong>", r"\1", text, flags=re.DOTALL)
+    # 去除 markdown 代码块和行内代码
+    text = re.sub(r"```[\w]*\n(.*?)\n```", r"\1", text, flags=re.DOTALL)
+    text = re.sub(r"```(.*?)```", r"\1", text, flags=re.DOTALL)
+    text = re.sub(r"`([^`]+)`", r"\1", text)
+    return text
 
 
 def _render_ai_analysis(ai_analysis: Any, channel: str, ai_push_mode: str) -> str:
@@ -189,6 +209,8 @@ def send_to_feishu(
 
     # 逐批发送
     for i, batch_content in enumerate(batches, 1):
+        # 清理不支持的 HTML 标签
+        batch_content = _clean_feishu_batch(batch_content)
         content_size = len(batch_content.encode("utf-8"))
         print(
             f"发送{log_prefix}第 {i}/{len(batches)} 批次，大小：{content_size} 字节 [{report_type}]"
@@ -409,6 +431,8 @@ def send_to_feishu_app(
 
     # 4. 逐批发送
     for i, batch_content in enumerate(batches, 1):
+        # 清理不支持的 HTML 标签
+        batch_content = _clean_feishu_batch(batch_content)
         content_size = len(batch_content.encode("utf-8"))
         print(
             f"发送{log_prefix}第 {i}/{len(batches)} 批次，大小：{content_size} 字节 [{report_type}]"
