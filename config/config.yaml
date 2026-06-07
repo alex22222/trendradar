@@ -18,6 +18,94 @@ platforms:
   - id: "douyin"
     name: "抖音"
 
+
+# ===============================================================
+# 3. 数据源 - RSS 订阅
+#
+# 与热榜数据分开存储，按时间流展示
+# 每个源配置：id(唯一标识)、name(显示名称)、url(订阅地址)
+# enabled: 可选，默认 true
+# max_age_days: 可选，覆盖全局 freshness_filter.max_age_days
+# ===============================================================
+rss:
+  enabled: true                       # 是否启用 RSS 抓取
+
+  # 文章新鲜度过滤配置（全局默认值）
+  # 过滤掉发布时间超过指定天数的旧文章，避免同一篇文章重复出现在推送中
+  #
+  # 过滤逻辑：
+  #   - 文章发布时间距当前时间（app.timezone 时区）超过 N 天则不推送
+  #   - 无发布时间的文章会被保留（不过滤）
+  #
+  # ⚠️ 过滤时机：在推送阶段过滤
+  #    - 所有文章都会存入数据库（MCP Server 的 AI 查询仍可访问）
+  #    - 只有新鲜的文章会被推送到通知渠道
+  freshness_filter:
+    enabled: true                     # 是否启用新鲜度过滤（默认启用）
+    max_age_days: 3                   # 最大文章年龄（天）
+                                      # - 正整数：只推送 N 天内的文章
+                                      # - 0：禁用过滤，推送所有文章
+
+  # 单个 feed 可配置 max_age_days 覆盖全局设置：
+  # - 不配置：使用全局 freshness_filter.max_age_days（默认 3 天）
+  # - 正整数：覆盖全局设置，只推送此天数内的文章
+  # - 0：禁用此频道的新鲜度过滤，推送所有文章
+  feeds:
+    - id: "hacker-news"
+      name: "Hacker News"
+      url: "https://hnrss.org/frontpage"
+      # max_age_days: 1               # 示例：只推送1天内的文章
+
+    # - id: "ruanyifeng"
+    #   name: "阮一峰的网络日志"
+    #   url: "http://www.ruanyifeng.com/blog/atom.xml"
+
+    # Reddit 在当前网络环境下无法直接访问（需要代理），暂时注释
+    # - id: "reddit-popular"
+    #   name: "Reddit 热门"
+    #   url: "https://www.reddit.com/r/popular/.rss"
+    #   enabled: false
+
+    - id: "spaceflight-now"
+      name: "Spaceflight Now"
+      url: "https://spaceflightnow.com/feed/"
+      # max_age_days: 1
+
+    - id: "ars-space"
+      name: "Ars Technica - Space"
+      url: "https://arstechnica.com/tag/space/feed/"
+    
+    - id: "yahoo-finance"
+      name: "雅虎财经"
+      url: "https://finance.yahoo.com/news/rssindex"
+      enabled: false                  # 禁用
+
+    # 自定义源示例
+    # - id: "custom-feed"
+    #   name: "自定义源"
+    #   url: "https://example.com/feed.xml"
+    #   enabled: false
+    #   max_age_days: 0               # 示例：禁用过滤，推送所有文章
+
+
+# ===============================================================
+# 4. 报告模式
+#
+# 🔸 daily（当日汇总模式）
+#    • 推送时机：按时推送(默认每小时推送一次)
+#    • 显示内容：当日所有匹配新闻 + 新增新闻区域
+#    • 适用场景：日报总结、全面了解当日热点趋势
+#
+# 🔸 current（当前榜单模式）
+#    • 推送时机：按时推送(默认每小时推送一次)
+#    • 显示内容：当前榜单匹配新闻 + 新增新闻区域
+#    • 适用场景：实时热点追踪、了解当前最火的内容
+#
+# 🔸 incremental（增量监控模式）
+#    • 推送时机：有新增才推送
+#    • 显示内容：新出现的匹配频率词新闻
+#    • 适用场景：避免重复信息干扰
+# ===============================================================
 report:
   mode: "current"
   display_mode: "keyword"

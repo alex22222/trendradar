@@ -5,10 +5,46 @@
 提供多平台通知内容渲染功能，生成格式化的推送消息
 """
 
+import re
 from datetime import datetime
 from typing import Dict, Optional, Callable
 
 from trendradar.report.formatter import format_title_for_platform
+
+
+def _clean_feishu_text(text: str) -> str:
+    """清理飞书 text 消息中的不支持的标记
+
+    飞书 text 消息不支持 HTML 标签和 markdown 代码块，
+    这些标记会原样显示为文本。本函数清理：
+    - HTML <font> 标签（保留内容）
+    - markdown 代码块（```...```）
+    - 行内代码标记（`...`）
+    - 多余的空行
+
+    Args:
+        text: 原始文本
+
+    Returns:
+        清理后的文本
+    """
+    if not text:
+        return text
+
+    # 1. 去除 HTML <font> 标签（保留内容）
+    text = re.sub(r"<font[^>]*>(.*?)</font>", r"\1", text, flags=re.DOTALL)
+
+    # 2. 去除 markdown 代码块
+    text = re.sub(r"```[\w]*\n(.*?)\n```", r"\1", text, flags=re.DOTALL)
+    text = re.sub(r"```(.*?)```", r"\1", text, flags=re.DOTALL)
+
+    # 3. 去除行内代码标记 `code` → code（保留内容）
+    text = re.sub(r"`([^`]+)`", r"\1", text)
+
+    # 4. 去除多余的空行（保留单空行）
+    text = re.sub(r"\n{3,}", "\n\n", text)
+
+    return text.strip()
 
 
 def render_feishu_content(
@@ -140,7 +176,8 @@ def render_feishu_content(
     if update_info:
         text_content += f"\n<font color='grey'>TrendRadar 发现新版本 {update_info['remote_version']}，当前 {update_info['current_version']}</font>"
 
-    return text_content
+    # 清理不支持的标记（HTML 标签、markdown 代码等）
+    return _clean_feishu_text(text_content)
 
 
 def render_dingtalk_content(

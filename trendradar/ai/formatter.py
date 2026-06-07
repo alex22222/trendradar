@@ -6,7 +6,36 @@ AI 分析结果格式化模块
 """
 
 import html as html_lib
+import re
 from .analyzer import AIAnalysisResult
+
+
+def _clean_markdown_code(text: str) -> str:
+    """清理 markdown 代码标记和 HTML 标签（用于飞书 text 消息）
+
+    清理规则：
+    - 去除 HTML <font> 标签（保留内容）
+    - 去除 markdown 代码块（```...```）及语言标识
+    - 去除行内代码标记（`...`）但保留内容
+    - 去除多余的空行
+    """
+    if not text:
+        return text
+
+    # 1. 去除 HTML <font> 标签（保留内容）
+    text = re.sub(r"<font[^>]*>(.*?)</font>", r"\1", text, flags=re.DOTALL)
+
+    # 2. 去除 markdown 代码块
+    text = re.sub(r"```[\w]*\n(.*?)\n```", r"\1", text, flags=re.DOTALL)
+    text = re.sub(r"```(.*?)```", r"\1", text, flags=re.DOTALL)
+
+    # 3. 去除行内代码标记
+    text = re.sub(r"`([^`]+)`", r"\1", text)
+
+    # 4. 去除多余空行
+    text = re.sub(r"\n{3,}", "\n\n", text)
+
+    return text.strip()
 
 
 def _escape_html(text: str) -> str:
@@ -53,25 +82,25 @@ def render_ai_analysis_feishu(result: AIAnalysisResult) -> str:
     lines = ["**✨ AI 热点分析**", ""]
 
     if result.summary:
-        lines.extend(["**趋势概述**", result.summary, ""])
+        lines.extend(["**趋势概述**", _clean_markdown_code(result.summary), ""])
 
     if result.keyword_analysis:
-        lines.extend(["**热度走势**", result.keyword_analysis, ""])
+        lines.extend(["**热度走势**", _clean_markdown_code(result.keyword_analysis), ""])
 
     if result.sentiment:
-        lines.extend(["**情感倾向**", result.sentiment, ""])
+        lines.extend(["**情感倾向**", _clean_markdown_code(result.sentiment), ""])
 
     if result.cross_platform:
-        lines.extend(["**跨平台关联**", result.cross_platform, ""])
+        lines.extend(["**跨平台关联**", _clean_markdown_code(result.cross_platform), ""])
 
     if result.impact:
-        lines.extend(["**潜在影响**", result.impact, ""])
+        lines.extend(["**潜在影响**", _clean_markdown_code(result.impact), ""])
 
     if result.signals:
-        lines.extend(["**值得关注**", result.signals, ""])
+        lines.extend(["**值得关注**", _clean_markdown_code(result.signals), ""])
 
     if result.conclusion:
-        lines.extend(["**总结建议**", result.conclusion])
+        lines.extend(["**总结建议**", _clean_markdown_code(result.conclusion)])
 
     return "\n".join(lines)
 
@@ -182,25 +211,25 @@ def render_ai_analysis_plain(result: AIAnalysisResult) -> str:
     lines = ["【AI 热点分析】", ""]
 
     if result.summary:
-        lines.extend(["[趋势概述]", result.summary, ""])
+        lines.extend(["[趋势概述]", _clean_markdown_code(result.summary), ""])
 
     if result.keyword_analysis:
-        lines.extend(["[热度走势]", result.keyword_analysis, ""])
+        lines.extend(["[热度走势]", _clean_markdown_code(result.keyword_analysis), ""])
 
     if result.sentiment:
-        lines.extend(["[情感倾向]", result.sentiment, ""])
+        lines.extend(["[情感倾向]", _clean_markdown_code(result.sentiment), ""])
 
     if result.cross_platform:
-        lines.extend(["[跨平台关联]", result.cross_platform, ""])
+        lines.extend(["[跨平台关联]", _clean_markdown_code(result.cross_platform), ""])
 
     if result.impact:
-        lines.extend(["[潜在影响]", result.impact, ""])
+        lines.extend(["[潜在影响]", _clean_markdown_code(result.impact), ""])
 
     if result.signals:
-        lines.extend(["[值得关注]", result.signals, ""])
+        lines.extend(["[值得关注]", _clean_markdown_code(result.signals), ""])
 
     if result.conclusion:
-        lines.extend(["[总结建议]", result.conclusion])
+        lines.extend(["[总结建议]", _clean_markdown_code(result.conclusion)])
 
     return "\n".join(lines)
 
