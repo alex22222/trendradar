@@ -55,10 +55,17 @@ def format_title_for_platform(
     keyword = title_data.get("matched_keyword", "") if show_keyword else ""
 
     if platform == "feishu":
-        if link_url:
-            formatted_title = f"[{cleaned_title}]({link_url})"
+        # Reddit 双语显示：如果有 title_en，显示中文/英文
+        title_en = title_data.get("title_en", "")
+        if title_en and title_en != cleaned_title:
+            display_title = f"{cleaned_title} <font color='grey'>/ {title_en}</font>"
         else:
-            formatted_title = cleaned_title
+            display_title = cleaned_title
+
+        if link_url:
+            formatted_title = f"[{display_title}]({link_url})"
+        else:
+            formatted_title = display_title
 
         title_prefix = "🆕 " if title_data.get("is_new") else ""
 

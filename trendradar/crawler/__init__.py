@@ -4,5 +4,6 @@
 """
 
 from trendradar.crawler.fetcher import DataFetcher
+from trendradar.crawler.reddit import RedditFetcher
 
-__all__ = ["DataFetcher"]
+__all__ = ["DataFetcher", "RedditFetcher"]

@@ -7,6 +7,7 @@ TrendRadar 主程序
 """
 
 import os
+import time
 import webbrowser
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
@@ -17,7 +18,7 @@ from trendradar.context import AppContext
 from trendradar import __version__
 from trendradar.core import load_config
 from trendradar.core.analyzer import convert_keyword_stats_to_platform_stats
-from trendradar.crawler import DataFetcher
+from trendradar.crawler import DataFetcher, RedditFetcher
 from trendradar.storage import convert_crawl_results_to_news_data
 from trendradar.utils.time import is_within_days
 from trendradar.ai import AIAnalyzer, AIAnalysisResult
@@ -808,13 +809,25 @@ class NewsAnalyzer:
         print(f"运行模式: {mode_strategy['description']}")
 
     def _crawl_data(self) -> Tuple[Dict, Dict, List]:
-        """执行数据爬取"""
+        """执行数据爬取（支持 Reddit）"""
         ids = []
+        reddit_platforms = []
+        
         for platform in self.ctx.platforms:
-            if "name" in platform:
-                ids.append((platform["id"], platform["name"]))
+            platform_id = platform["id"]
+            if platform_id.startswith("reddit-"):
+                # Reddit 平台单独处理
+                subreddit = platform_id.replace("reddit-", "")
+                reddit_platforms.append({
+                    "id": platform_id,
+                    "name": platform.get("name", f"Reddit {subreddit}"),
+                    "subreddit": subreddit,
+                })
             else:
-                ids.append(platform["id"])
+                if "name" in platform:
+                    ids.append((platform_id, platform["name"]))
+                else:
+                    ids.append(platform_id)
 
         print(
             f"配置的监控平台: {[p.get('name', p['id']) for p in self.ctx.platforms]}"
@@ -822,9 +835,39 @@ class NewsAnalyzer:
         print(f"开始爬取数据，请求间隔 {self.request_interval} 毫秒")
         Path("output").mkdir(parents=True, exist_ok=True)
 
+        # 1. 爬取 NewsNow 平台数据
         results, id_to_name, failed_ids = self.data_fetcher.crawl_websites(
             ids, self.request_interval
         )
+
+        # 2. 爬取 Reddit 数据（如果配置了）
+        if reddit_platforms:
+            print(f"[Reddit] 开始爬取 {len(reddit_platforms)} 个 subreddit...")
+            for reddit_cfg in reddit_platforms:
+                try:
+                    reddit_fetcher = RedditFetcher(
+                        proxy_url=self.proxy_url,
+                        subreddit=reddit_cfg["subreddit"],
+                        limit=reddit_cfg.get("limit", 25),
+                        translate=reddit_cfg.get("translate", False),
+                        ai_config=self.ctx.config.get("AI_ANALYSIS", {}),
+                    )
+                    reddit_results, reddit_id, reddit_failed = reddit_fetcher.crawl()
+                    
+                    if reddit_results:
+                        results[reddit_id] = reddit_results
+                        id_to_name[reddit_id] = reddit_cfg["name"]
+                        print(f"[Reddit] {reddit_cfg['name']} 爬取成功，{len(reddit_results)} 条帖子")
+                    else:
+                        failed_ids.append(reddit_id)
+                        print(f"[Reddit] {reddit_cfg['name']} 爬取失败")
+                        
+                    # 请求间隔
+                    time.sleep(self.request_interval / 1000)
+                    
+                except Exception as e:
+                    failed_ids.append(reddit_cfg["id"])
+                    print(f"[Reddit] {reddit_cfg['name']} 爬取异常: {e}")
 
         # 转换为 NewsData 格式并保存到存储后端
         crawl_time = self.ctx.format_time()
